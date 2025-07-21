@@ -12,6 +12,14 @@ A comprehensive Python-based finance calculator app inspired by the iPhone calcu
 - Chain calculations support
 - iPhone-inspired dark theme interface
 
+### ✨ Enhanced User Experience
+- **Input Validation**: Comprehensive error checking with helpful guidance
+- **Smart Tooltips**: Contextual help for every input field
+- **Default Examples**: Pre-filled realistic values for quick testing
+- **Success Messages**: Detailed calculation summaries and interpretations
+- **Format Guidance**: Clear examples of expected input formats
+- **Warning System**: Alerts for unusual but valid inputs
+
 ### 📊 NPV Calculator
 - **Net Present Value (NPV)** calculation with multiple cash flows
 - **Internal Rate of Return (IRR)** using Newton-Raphson method
