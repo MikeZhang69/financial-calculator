@@ -13,6 +13,7 @@ from datetime import datetime
 import os
 from typing import List, Dict, Optional
 from finance_utils import FinancialCalculations
+from scientific_calc import ScientificCalculator, ScientificButtonLayout, format_scientific_result
 
 class FinanceCalculator:
     def __init__(self):
@@ -28,6 +29,13 @@ class FinanceCalculator:
         self.operator = None
         self.first_number = None
         self.should_reset_display = False
+        
+        # Scientific calculator state
+        self.is_scientific_mode = False
+        self.scientific_calc = ScientificCalculator()
+        self.expression = ""
+        self.waiting_for_operand = False
+        self.pending_operation = None
         
         # Data management
         self.calculation_history = []
@@ -48,6 +56,20 @@ class FinanceCalculator:
         display_frame = tk.Frame(self.root, bg='#1c1c1e')
         display_frame.pack(fill='x', padx=10, pady=10)
         
+        # Formula display (shows the complete expression)
+        self.formula_var = tk.StringVar(value="")
+        self.formula_display = tk.Label(
+            display_frame,
+            textvariable=self.formula_var,
+            font=('SF Pro Display', 16, 'normal'),
+            bg='#1c1c1e',
+            fg='#888888',
+            anchor='e',
+            height=2
+        )
+        self.formula_display.pack(fill='x')
+        
+        # Main result display
         self.display = tk.Label(
             display_frame,
             textvariable=self.display_var,
@@ -108,10 +130,38 @@ class FinanceCalculator:
         self.create_basic_buttons()
     
     def create_basic_buttons(self):
-        """Create basic calculator buttons"""
+        """Create basic calculator buttons with scientific toggle"""
         # Clear existing buttons
         for widget in self.button_frame.winfo_children():
             widget.destroy()
+        
+        # Add scientific toggle button
+        toggle_frame = tk.Frame(self.button_frame, bg='#1c1c1e')
+        toggle_frame.pack(fill='x', pady=(0, 10))
+        
+        toggle_btn = tk.Button(
+            toggle_frame,
+            text="🧮 Scientific" if not self.is_scientific_mode else "🔢 Basic",
+            command=self.toggle_scientific_mode,
+            bg='#d4d4d2',
+            fg='#1c1c1e',
+            font=('SF Pro Display', 12, 'bold'),
+            relief='flat',
+            padx=10
+        )
+        toggle_btn.pack()
+        
+        # Create appropriate button layout
+        if self.is_scientific_mode:
+            self.create_scientific_buttons()
+        else:
+            self.create_basic_button_grid()
+    
+    def create_basic_button_grid(self):
+        """Create basic calculator button grid"""
+        # Create a frame for the button grid
+        grid_frame = tk.Frame(self.button_frame, bg='#1c1c1e')
+        grid_frame.pack(fill='both', expand=True)
         
         buttons = [
             ['C', '±', '%', '÷'],
@@ -124,20 +174,79 @@ class FinanceCalculator:
         for i, row in enumerate(buttons):
             for j, btn_text in enumerate(row):
                 if i == 4 and j == 0:  # Zero button spans 2 columns
-                    btn = self.create_button(btn_text, i, j, columnspan=2)
+                    btn = self.create_grid_button(btn_text, i, j, grid_frame, columnspan=2)
                 elif i == 4 and j == 1:  # Skip this position for zero button
+                    continue
+                else:
+                    btn = self.create_grid_button(btn_text, i, j, grid_frame)
+    
+    def create_scientific_buttons(self):
+        """Create scientific calculator button grid"""
+        buttons = [
+            ['2nd', 'π', 'e', 'C', '⌫'],
+            ['x²', '1/x', '|x|', 'exp', 'mod'],
+            ['√', '(', ')', 'n!', '÷'],
+            ['sin', 'cos', 'tan', 'ln', '×'],
+            ['7', '8', '9', 'log', '−'],
+            ['4', '5', '6', 'x^y', '+'],
+            ['1', '2', '3', 'deg', '='],
+            ['0', '.', 'EE', 'MC', 'MR']
+        ]
+        
+        for i, row in enumerate(buttons):
+            for j, btn_text in enumerate(row):
+                if i == 7 and j == 0:  # Zero button spans 2 columns in scientific mode
+                    btn = self.create_button(btn_text, i, j, columnspan=2)
+                elif i == 7 and j == 1:  # Skip this position for zero button
                     continue
                 else:
                     btn = self.create_button(btn_text, i, j)
     
+    def toggle_scientific_mode(self):
+        """Toggle between basic and scientific calculator modes"""
+        self.is_scientific_mode = not self.is_scientific_mode
+        self.expression = ""  # Clear expression when switching modes
+        self.display_var.set("0")
+        self.create_basic_buttons()  # Recreate buttons with new mode
+    
     def create_button(self, text, row, col, columnspan=1):
-        """Create a calculator button"""
-        # Button styling - all buttons use the same light gray color as numbers
+        """Create a calculator button (for scientific mode)"""
+        # Create a frame for the scientific button grid if it doesn't exist
+        if not hasattr(self, 'sci_grid_frame'):
+            self.sci_grid_frame = tk.Frame(self.button_frame, bg='#1c1c1e')
+            self.sci_grid_frame.pack(fill='both', expand=True)
+        
+        # Button styling - all buttons use the same light gray color
         bg_color = '#d4d4d2'  # Light gray for all buttons
         fg_color = '#1c1c1e'  # Dark text for all buttons
         
         btn = tk.Button(
-            self.button_frame,
+            self.sci_grid_frame,
+            text=text,
+            font=('SF Pro Display', 14),  # Smaller font for scientific mode
+            bg=bg_color,
+            fg=fg_color,
+            relief='flat',
+            command=lambda: self.button_click(text)
+        )
+        
+        btn.grid(row=row, column=col, columnspan=columnspan, 
+                sticky='nsew', padx=1, pady=1)
+        
+        # Configure grid weights
+        self.sci_grid_frame.grid_rowconfigure(row, weight=1)
+        self.sci_grid_frame.grid_columnconfigure(col, weight=1)
+        
+        return btn
+    
+    def create_grid_button(self, text, row, col, parent_frame, columnspan=1):
+        """Create a calculator button for basic mode"""
+        # Button styling - all buttons use the same light gray color
+        bg_color = '#d4d4d2'  # Light gray for all buttons
+        fg_color = '#1c1c1e'  # Dark text for all buttons
+        
+        btn = tk.Button(
+            parent_frame,
             text=text,
             font=('SF Pro Display', 24),
             bg=bg_color,
@@ -150,15 +259,24 @@ class FinanceCalculator:
                 sticky='nsew', padx=2, pady=2)
         
         # Configure grid weights
-        self.button_frame.grid_rowconfigure(row, weight=1)
-        self.button_frame.grid_columnconfigure(col, weight=1)
+        parent_frame.grid_rowconfigure(row, weight=1)
+        parent_frame.grid_columnconfigure(col, weight=1)
         
         return btn
     
     def button_click(self, text):
-        """Handle button clicks"""
+        """Handle button clicks for both basic and scientific modes"""
         current = self.display_var.get()
         
+        if not self.is_scientific_mode:
+            # Basic calculator mode
+            self.handle_basic_button_click(text, current)
+        else:
+            # Scientific calculator mode
+            self.handle_scientific_button_click(text, current)
+    
+    def handle_basic_button_click(self, text, current):
+        """Handle basic calculator button clicks"""
         if text == 'C':
             # Clear everything
             self.display_var.set("0")
@@ -225,6 +343,236 @@ class FinanceCalculator:
                 self.should_reset_display = False
             else:
                 self.display_var.set(current + text)
+    
+    def handle_scientific_button_click(self, text, current):
+        """Handle scientific calculator button clicks with improved expression handling"""
+        try:
+            if text == 'C':
+                # Clear everything
+                self.display_var.set("0")
+                self.formula_var.set("")
+                self.expression = ""
+                self.waiting_for_operand = False
+                self.pending_operation = None
+                self.scientific_calc.memory_clear()
+                
+            elif text == '⌫':
+                # Backspace - remove last character from expression
+                if self.expression:
+                    self.expression = self.expression.rstrip()  # Remove trailing spaces
+                    if self.expression:
+                        self.expression = self.expression[:-1]
+                        self.formula_var.set(self.expression)
+                        # Update display based on what's left
+                        if not self.expression or self.expression.endswith((' + ', ' - ', ' * ', ' / ', ' ^ ', '(')):
+                            self.display_var.set("0")
+                            self.waiting_for_operand = True
+                        else:
+                            # Extract the last number from expression
+                            parts = self.expression.replace('(', ' ( ').replace(')', ' ) ').split()
+                            if parts and parts[-1] not in ['+', '-', '*', '/', '^', '(', ')']:
+                                self.display_var.set(parts[-1])
+                                self.waiting_for_operand = False
+                    else:
+                        self.display_var.set("0")
+                        self.waiting_for_operand = False
+                elif len(current) > 1:
+                    self.display_var.set(current[:-1])
+                else:
+                    self.display_var.set("0")
+                    
+            elif text in ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']:
+                # Numbers - build the current number
+                if self.waiting_for_operand or current == "0" or current == "Error":
+                    self.display_var.set(text)
+                    self.waiting_for_operand = False
+                else:
+                    self.display_var.set(current + text)
+                    
+            elif text == '.':
+                # Decimal point
+                if '.' not in current:
+                    if self.waiting_for_operand or current == "0" or current == "Error":
+                        self.display_var.set("0.")
+                        self.waiting_for_operand = False
+                    else:
+                        self.display_var.set(current + '.')
+                        
+            elif text in ['+', '−', '×', '÷', 'x^y']:
+                # Operators - add current number and operator to expression
+                if current != "Error":
+                    # Convert operator symbols
+                    op_map = {'×': '*', '÷': '/', '−': '-', 'x^y': '**'}
+                    operator_symbol = op_map.get(text, text)
+                    
+                    # Add current number to expression if not waiting for operand
+                    if not self.waiting_for_operand:
+                        if self.expression:
+                            self.expression += current + " " + operator_symbol + " "
+                        else:
+                            self.expression = current + " " + operator_symbol + " "
+                    else:
+                        # Replace the last operator if we were waiting for operand
+                        self.expression = self.expression.rstrip() + " " + operator_symbol + " "
+                    
+                    self.formula_var.set(self.expression)
+                    self.waiting_for_operand = True
+                    
+            elif text == '(':
+                # Opening parenthesis
+                if self.expression:
+                    # Check if we need to add multiplication before parenthesis
+                    if not self.waiting_for_operand and not self.expression.endswith((' + ', ' - ', ' * ', ' / ', ' ** ', '(')):
+                        self.expression += current + " * ("
+                    else:
+                        self.expression += "("
+                else:
+                    self.expression = "("
+                
+                self.formula_var.set(self.expression)
+                self.display_var.set("0")
+                self.waiting_for_operand = True
+                
+            elif text == ')':
+                # Closing parenthesis
+                if self.expression:
+                    if not self.waiting_for_operand and current != "0" and current != "Error":
+                        # Add the current number before closing parenthesis
+                        self.expression += current + ")"
+                    else:
+                        # Just close the parenthesis if we're waiting for operand or current is 0
+                        self.expression = self.expression.rstrip() + ")"
+                    
+                    self.formula_var.set(self.expression)
+                    # After closing parenthesis, clear display and wait for operator
+                    self.display_var.set("0")
+                    self.waiting_for_operand = True  # This is key - we should wait for an operator
+                    
+            elif text == '=':
+                # Calculate expression
+                if self.expression:
+                    # Add current number if not waiting for operand
+                    if not self.waiting_for_operand and current != "0":
+                        full_expression = self.expression + current
+                    else:
+                        full_expression = self.expression.rstrip()
+                    
+                    self.formula_var.set(full_expression + " =")
+                    
+                    try:
+                        # Evaluate the expression
+                        result = self.scientific_calc.evaluate_expression(full_expression)
+                        formatted_result = format_scientific_result(result)
+                        self.display_var.set(formatted_result)
+                    except Exception as e:
+                        self.display_var.set("Error")
+                        print(f"Expression evaluation error: {e}")  # For debugging
+                    
+                    # Clear for next calculation
+                    self.expression = ""
+                    self.waiting_for_operand = False
+                elif current != "0" and current != "Error":
+                    # Just display the current number if no expression
+                    self.display_var.set(current)
+                    
+            elif text == 'π':
+                # Pi constant
+                self.display_var.set(str(self.scientific_calc.pi()))
+                
+            elif text == 'e':
+                # Euler's number
+                self.display_var.set(str(self.scientific_calc.e()))
+                
+            elif text == 'sin':
+                # Sine function
+                value = float(current)
+                result = self.scientific_calc.sin(value)
+                self.display_var.set(format_scientific_result(result))
+                
+            elif text == 'cos':
+                # Cosine function
+                value = float(current)
+                result = self.scientific_calc.cos(value)
+                self.display_var.set(format_scientific_result(result))
+                
+            elif text == 'tan':
+                # Tangent function
+                value = float(current)
+                result = self.scientific_calc.tan(value)
+                self.display_var.set(format_scientific_result(result))
+                
+            elif text == 'ln':
+                # Natural logarithm
+                value = float(current)
+                result = self.scientific_calc.ln(value)
+                self.display_var.set(format_scientific_result(result))
+                
+            elif text == 'log':
+                # Base-10 logarithm
+                value = float(current)
+                result = self.scientific_calc.log10(value)
+                self.display_var.set(format_scientific_result(result))
+                
+            elif text == 'exp':
+                # e^x
+                value = float(current)
+                result = self.scientific_calc.exp(value)
+                self.display_var.set(format_scientific_result(result))
+                
+            elif text == 'x²':
+                # Square
+                value = float(current)
+                result = self.scientific_calc.power(value, 2)
+                self.display_var.set(format_scientific_result(result))
+                
+            elif text == '√':
+                # Square root
+                value = float(current)
+                result = self.scientific_calc.square_root(value)
+                self.display_var.set(format_scientific_result(result))
+                
+            elif text == 'n!':
+                # Factorial
+                value = float(current)
+                result = self.scientific_calc.factorial(value)
+                self.display_var.set(format_scientific_result(result))
+                
+            elif text == '1/x':
+                # Reciprocal
+                value = float(current)
+                if value != 0:
+                    result = 1 / value
+                    self.display_var.set(format_scientific_result(result))
+                else:
+                    self.display_var.set("Error")
+                    
+            elif text == '|x|':
+                # Absolute value
+                value = float(current)
+                result = self.scientific_calc.absolute(value)
+                self.display_var.set(format_scientific_result(result))
+                
+            elif text == 'deg':
+                # Toggle angle mode
+                if self.scientific_calc.get_angle_mode() == 'deg':
+                    self.scientific_calc.set_angle_mode('rad')
+                    # Update button text would require recreating buttons
+                else:
+                    self.scientific_calc.set_angle_mode('deg')
+                    
+            elif text == 'MC':
+                # Memory clear
+                self.scientific_calc.memory_clear()
+                
+            elif text == 'MR':
+                # Memory recall
+                result = self.scientific_calc.memory_recall()
+                self.display_var.set(format_scientific_result(result))
+                
+
+                    
+        except Exception as e:
+            self.display_var.set("Error")
     
     def calculate(self, first: float, second: float, operator: str) -> float:
         """Perform basic arithmetic calculations"""

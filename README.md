@@ -4,13 +4,23 @@ A comprehensive Python-based finance calculator app inspired by the iPhone calcu
 
 ## 🚀 Features
 
-### 🧮 Basic Calculator
-- Standard arithmetic operations (+, -, ×, ÷)
-- Percentage calculations
-- Sign toggle (±)
-- Clear function
-- Chain calculations support
-- iPhone-inspired dark theme interface
+### 🧮 Calculator
+- **Basic Mode**:
+  - Standard arithmetic operations (+, -, ×, ÷)
+  - Percentage calculations
+  - Sign toggle (±)
+  - Clear function
+  - Chain calculations support
+  
+- **Scientific Mode** (toggle with one click):
+  - Trigonometric functions (sin, cos, tan)
+  - Logarithmic functions (log, ln)
+  - Powers and roots (x², √, x^y)
+  - Constants (π, e)
+  - Memory functions (MC, MR)
+  - Parentheses for complex expressions
+  - Formula display showing complete expressions
+  - Angle mode toggle (degrees/radians)
 
 ### ✨ Enhanced User Experience
 - **Input Validation**: Comprehensive error checking with helpful guidance
@@ -95,6 +105,19 @@ Launch the calculator and use the mode selector buttons at the top to switch bet
 - "C" clears the display and resets calculator state
 - "±" toggles the sign of the current number
 - "%" converts the current number to percentage
+
+#### **Scientific Mode**
+- Click the "🧮 Scientific" toggle button to switch to scientific mode
+- Use advanced mathematical functions:
+  - **Trigonometry**: sin, cos, tan
+  - **Logarithms**: log (base 10), ln (natural log)
+  - **Powers**: x², x^y (power), √ (square root)
+  - **Constants**: π (pi), e (Euler's number)
+  - **Memory**: MC (memory clear), MR (memory recall)
+- Enter complex expressions with parentheses (e.g., `2+(3-4)*5`)
+- View the complete formula as you type in the formula display
+- Toggle between degrees and radians for angle calculations
+- Chain multiple operations with proper order of operations
 
 #### **NPV Mode**
 1. Enter **Discount Rate** as percentage (e.g., 10 for 10%)
@@ -195,7 +218,9 @@ Results:
 calculator/
 ├── main.py              # Main GUI application
 ├── finance_utils.py     # Financial calculation utilities
+├── scientific_calc.py   # Scientific calculator functions
 ├── test_calculator.py   # Test suite for calculations
+├── test_scientific.py   # Scientific calculator tests
 ├── requirements.txt     # Python dependencies
 └── README.md           # This documentation
 ```
