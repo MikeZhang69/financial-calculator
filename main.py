@@ -5,8 +5,12 @@ A calculator app inspired by iPhone calculator but focused on investment analysi
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox, simpledialog, filedialog
 import numpy as np
+import json
+import csv
+from datetime import datetime
+import os
 from typing import List, Dict, Optional
 from finance_utils import FinancialCalculations
 
@@ -25,6 +29,17 @@ class FinanceCalculator:
         self.first_number = None
         self.should_reset_display = False
         
+        # Data management
+        self.calculation_history = []
+        self.favorites = []
+        self.history_file = "calculation_history.json"
+        self.favorites_file = "calculation_favorites.json"
+        self.last_calculation_data = None
+        
+        # Load existing data
+        self.load_history()
+        self.load_favorites()
+        
         self.setup_ui()
     
     def setup_ui(self):
@@ -42,6 +57,31 @@ class FinanceCalculator:
             anchor='e'
         )
         self.display.pack(fill='x')
+        
+        # Menu bar for data management
+        menu_frame = tk.Frame(self.root, bg='#2c2c2e')
+        menu_frame.pack(fill='x', padx=5, pady=2)
+        
+        menu_buttons = [
+            ("📊 History", self.show_history_window),
+            ("⭐ Favorites", self.show_favorites_window),
+            ("� Save", self.save_current_calculation),
+            ("📤 Export", self.export_current_calculation)
+        ]
+        
+        for text, command in menu_buttons:
+            btn = tk.Button(
+                menu_frame,
+                text=text,
+                command=command,
+                bg='#d4d4d2',
+                fg='black',
+                font=('SF Pro Display', 10, 'bold'),
+                relief='flat',
+                padx=8,
+                pady=2
+            )
+            btn.pack(side='left', padx=2)
         
         # Mode selector
         mode_frame = tk.Frame(self.root, bg='#1c1c1e')
@@ -362,13 +402,31 @@ class FinanceCalculator:
             
             self.display_var.set(result_text)
             
-            # Show success message with summary
-            messagebox.showinfo("NPV Analysis Complete", 
-                f"Analysis completed successfully!\n\n" +
+            # Save calculation data for export and history
+            inputs_data = {
+                'discount_rate': rate * 100,  # Convert back to percentage
+                'cash_flows': cashflows
+            }
+            results_data = {
+                'npv': npv,
+                'irr': irr,
+                'payback': payback
+            }
+            self.save_calculation_data('npv', inputs_data, results_data)
+            
+            # Show success message with summary and export options
+            success_msg = (f"Analysis completed successfully!\n\n" +
                 f"Investment Summary:\n" +
                 f"• NPV: ${npv:,.2f} ({'Profitable' if npv > 0 else 'Not Profitable'})\n" +
                 f"• IRR: {irr:.2%} vs {rate:.2%} required\n" +
                 f"• Payback: {payback:.1f} years" if payback else "• Payback: Never pays back")
+            
+            result = messagebox.askquestion("NPV Analysis Complete", 
+                success_msg + "\n\nWould you like to export or save this calculation?",
+                icon='question')
+            
+            if result == 'yes':
+                self.export_current_calculation()
             
         except Exception as e:
             messagebox.showerror("Calculation Error", 
@@ -553,14 +611,34 @@ class FinanceCalculator:
             
             self.display_var.set(result_text)
             
-            # Show success message with detailed breakdown
-            messagebox.showinfo("DCF Valuation Complete", 
-                f"Enterprise valuation completed!\n\n" +
+            # Save calculation data for export and history
+            inputs_data = {
+                'cash_flows': cashflows,
+                'terminal_growth': terminal_growth * 100,  # Convert back to percentage
+                'discount_rate': discount_rate * 100  # Convert back to percentage
+            }
+            results_data = {
+                'enterprise_value': dcf_result['enterprise_value'],
+                'pv_cashflows': dcf_result['pv_cashflows'],
+                'pv_terminal_value': dcf_result['pv_terminal_value'],
+                'terminal_value': dcf_result['terminal_value']
+            }
+            self.save_calculation_data('dcf', inputs_data, results_data)
+            
+            # Show success message with detailed breakdown and export options
+            success_msg = (f"Enterprise valuation completed!\n\n" +
                 f"Valuation Summary:\n" +
                 f"• Enterprise Value: ${dcf_result['enterprise_value']:,.0f}\n" +
                 f"• PV of Cash Flows: ${dcf_result['pv_cashflows']:,.0f} ({100-terminal_percentage:.0f}%)\n" +
                 f"• PV of Terminal Value: ${dcf_result['pv_terminal_value']:,.0f} ({terminal_percentage:.0f}%)\n" +
                 f"• Terminal Value: ${dcf_result['terminal_value']:,.0f}")
+            
+            result = messagebox.askquestion("DCF Valuation Complete", 
+                success_msg + "\n\nWould you like to export or save this calculation?",
+                icon='question')
+            
+            if result == 'yes':
+                self.export_current_calculation()
             
         except Exception as e:
             messagebox.showerror("Calculation Error", 
@@ -773,14 +851,34 @@ class FinanceCalculator:
             # Update main display with summary
             self.display_var.set(f"Total: ${total_cf:,.0f}\nCAGR: {cagr:.2%}\nFinal: ${projections[-1][1]:,.0f}")
             
-            # Show success message
-            messagebox.showinfo("Cash Flow Projection Complete", 
-                f"Projection completed successfully!\n\n" +
+            # Save calculation data for export and history
+            inputs_data = {
+                'initial_cf': initial_cf,
+                'growth_rate': growth_rate * 100,  # Convert back to percentage
+                'years': years
+            }
+            results_data = {
+                'projections': [cf for _, cf in projections],
+                'total_cf': total_cf,
+                'avg_cf': avg_cf,
+                'cagr': cagr
+            }
+            self.save_calculation_data('cashflow', inputs_data, results_data)
+            
+            # Show success message with export option
+            success_msg = (f"Projection completed successfully!\n\n" +
                 f"Summary:\n" +
                 f"• Total {years}-year cash flow: ${total_cf:,.0f}\n" +
                 f"• Average annual: ${avg_cf:,.0f}\n" +
                 f"• CAGR: {cagr:.2%}\n" +
                 f"• Final year: ${projections[-1][1]:,.0f}")
+            
+            result = messagebox.askquestion("Cash Flow Projection Complete", 
+                success_msg + "\n\nWould you like to export or save this calculation?",
+                icon='question')
+            
+            if result == 'yes':
+                self.export_current_calculation()
             
         except Exception as e:
             messagebox.showerror("Calculation Error", 
@@ -970,8 +1068,39 @@ class FinanceCalculator:
             
             self.bond_results.insert(tk.END, f"\nBond Status: Trading at {status}\n")
             
+            # Save calculation data for export and history
+            inputs_data = {
+                'face_value': face_value,
+                'coupon_rate': coupon_rate * 100,  # Convert back to percentage
+                'yield_rate': yield_rate * 100,  # Convert back to percentage
+                'years_to_maturity': years_to_maturity,
+                'payments_per_year': payments_per_year
+            }
+            results_data = {
+                'bond_price': bond_result['bond_price'],
+                'current_yield': bond_result['current_yield'],
+                'duration': bond_result['duration'],
+                'coupon_payment': bond_result['coupon_payment']
+            }
+            self.save_calculation_data('bonds', inputs_data, results_data)
+            
             # Update main display
             self.display_var.set(f"Price: ${bond_result['bond_price']:,.2f}\nYield: {bond_result['current_yield']:.2%}")
+            
+            # Show success message with export option
+            success_msg = (f"Bond valuation completed!\n\n" +
+                f"Bond Analysis:\n" +
+                f"• Bond Price: ${bond_result['bond_price']:,.2f}\n" +
+                f"• Current Yield: {bond_result['current_yield']:.2%}\n" +
+                f"• Duration: {bond_result['duration']:.2f} years\n" +
+                f"• Status: Trading at {status}")
+            
+            result = messagebox.askquestion("Bond Valuation Complete", 
+                success_msg + "\n\nWould you like to export or save this calculation?",
+                icon='question')
+            
+            if result == 'yes':
+                self.export_current_calculation()
             
         except ValueError:
             messagebox.showerror("Error", "Please enter valid numbers")
@@ -1034,6 +1163,400 @@ class FinanceCalculator:
         except Exception as e:
             messagebox.showerror("Error", f"Calculation error: {str(e)}")
     
+    # Data Management Methods
+    def load_history(self):
+        """Load calculation history from file"""
+        try:
+            if os.path.exists(self.history_file):
+                with open(self.history_file, 'r') as f:
+                    self.calculation_history = json.load(f)
+        except Exception as e:
+            print(f"Error loading history: {e}")
+            self.calculation_history = []
+    
+    def save_history(self):
+        """Save calculation history to file"""
+        try:
+            with open(self.history_file, 'w') as f:
+                json.dump(self.calculation_history, f, indent=2)
+        except Exception as e:
+            print(f"Error saving history: {e}")
+    
+    def load_favorites(self):
+        """Load favorite calculations from file"""
+        try:
+            if os.path.exists(self.favorites_file):
+                with open(self.favorites_file, 'r') as f:
+                    self.favorites = json.load(f)
+        except Exception as e:
+            print(f"Error loading favorites: {e}")
+            self.favorites = []
+    
+    def save_favorites(self):
+        """Save favorite calculations to file"""
+        try:
+            with open(self.favorites_file, 'w') as f:
+                json.dump(self.favorites, f, indent=2)
+        except Exception as e:
+            print(f"Error saving favorites: {e}")
+    
+    def add_to_history(self, calculation_type, inputs, results, description=""):
+        """Add a calculation to history"""
+        history_entry = {
+            'timestamp': datetime.now().isoformat(),
+            'type': calculation_type,
+            'inputs': inputs,
+            'results': results,
+            'description': description
+        }
+        
+        self.calculation_history.insert(0, history_entry)  # Add to beginning
+        
+        # Keep only last 100 calculations
+        if len(self.calculation_history) > 100:
+            self.calculation_history = self.calculation_history[:100]
+        
+        self.last_calculation_data = history_entry
+        self.save_history()
+    
+    def add_to_favorites(self, name, calculation_type, inputs, results, description=""):
+        """Add a calculation to favorites"""
+        favorite_entry = {
+            'name': name,
+            'timestamp': datetime.now().isoformat(),
+            'type': calculation_type,
+            'inputs': inputs,
+            'results': results,
+            'description': description
+        }
+        
+        self.favorites.append(favorite_entry)
+        self.save_favorites()
+        messagebox.showinfo("Saved", f"Calculation saved as '{name}' to favorites!")
+    
+    def export_to_csv(self, data, filename):
+        """Export calculation data to CSV"""
+        try:
+            with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                if not data:
+                    csvfile.write("No data to export\n")
+                    return
+                
+                # Write header
+                writer = csv.writer(csvfile)
+                
+                if data[0].get('type') == 'npv':
+                    writer.writerow(['Date', 'Type', 'Discount Rate (%)', 'Cash Flows', 'NPV ($)', 'IRR (%)', 'Payback (years)', 'Description'])
+                    for entry in data:
+                        inputs = entry.get('inputs', {})
+                        results = entry.get('results', {})
+                        writer.writerow([
+                            entry.get('timestamp', ''),
+                            entry.get('type', ''),
+                            inputs.get('discount_rate', ''),
+                            inputs.get('cash_flows', ''),
+                            results.get('npv', ''),
+                            results.get('irr', ''),
+                            results.get('payback', ''),
+                            entry.get('description', '')
+                        ])
+                
+                elif data[0].get('type') == 'dcf':
+                    writer.writerow(['Date', 'Type', 'Free Cash Flows', 'Terminal Growth (%)', 'WACC (%)', 'Enterprise Value ($)', 'Description'])
+                    for entry in data:
+                        inputs = entry.get('inputs', {})
+                        results = entry.get('results', {})
+                        writer.writerow([
+                            entry.get('timestamp', ''),
+                            entry.get('type', ''),
+                            inputs.get('cash_flows', ''),
+                            inputs.get('terminal_growth', ''),
+                            inputs.get('wacc', ''),
+                            results.get('enterprise_value', ''),
+                            entry.get('description', '')
+                        ])
+                
+                elif data[0].get('type') == 'cashflow':
+                    writer.writerow(['Date', 'Type', 'Initial CF ($)', 'Growth Rate (%)', 'Years', 'Total CF ($)', 'CAGR (%)', 'Description'])
+                    for entry in data:
+                        inputs = entry.get('inputs', {})
+                        results = entry.get('results', {})
+                        writer.writerow([
+                            entry.get('timestamp', ''),
+                            entry.get('type', ''),
+                            inputs.get('initial_cf', ''),
+                            inputs.get('growth_rate', ''),
+                            inputs.get('years', ''),
+                            results.get('total_cf', ''),
+                            results.get('cagr', ''),
+                            entry.get('description', '')
+                        ])
+                
+                elif data[0].get('type') == 'bonds':
+                    writer.writerow(['Date', 'Type', 'Face Value ($)', 'Coupon Rate (%)', 'Yield (%)', 'Years', 'Bond Price ($)', 'Duration', 'Description'])
+                    for entry in data:
+                        inputs = entry.get('inputs', {})
+                        results = entry.get('results', {})
+                        writer.writerow([
+                            entry.get('timestamp', ''),
+                            entry.get('type', ''),
+                            inputs.get('face_value', ''),
+                            inputs.get('coupon_rate', ''),
+                            inputs.get('yield_rate', ''),
+                            inputs.get('years', ''),
+                            results.get('bond_price', ''),
+                            results.get('duration', ''),
+                            entry.get('description', '')
+                        ])
+                
+                else:
+                    # Generic export for mixed types
+                    writer.writerow(['Date', 'Type', 'Inputs', 'Results', 'Description'])
+                    for entry in data:
+                        writer.writerow([
+                            entry.get('timestamp', ''),
+                            entry.get('type', ''),
+                            str(entry.get('inputs', {})),
+                            str(entry.get('results', {})),
+                            entry.get('description', '')
+                        ])
+            
+            return True
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export to CSV:\n{str(e)}")
+            return False
+    
+    def show_history_window(self):
+        """Show calculation history in a new window"""
+        history_window = tk.Toplevel(self.root)
+        history_window.title("Calculation History")
+        history_window.geometry("800x600")
+        history_window.configure(bg='#1c1c1e')
+        
+        # Create scrollable text area
+        text_frame = tk.Frame(history_window, bg='#1c1c1e')
+        text_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        scrollbar = tk.Scrollbar(text_frame)
+        scrollbar.pack(side='right', fill='y')
+        
+        history_text = tk.Text(text_frame, bg='#333333', fg='white', 
+                              font=('SF Pro Display', 11), yscrollcommand=scrollbar.set)
+        history_text.pack(fill='both', expand=True)
+        scrollbar.config(command=history_text.yview)
+        
+        # Display history
+        if not self.calculation_history:
+            history_text.insert(tk.END, "No calculation history available.\n\nStart making calculations to build your history!")
+        else:
+            history_text.insert(tk.END, f"CALCULATION HISTORY ({len(self.calculation_history)} entries)\n")
+            history_text.insert(tk.END, "=" * 60 + "\n\n")
+            
+            for i, entry in enumerate(self.calculation_history, 1):
+                timestamp = datetime.fromisoformat(entry['timestamp']).strftime("%Y-%m-%d %H:%M:%S")
+                history_text.insert(tk.END, f"{i}. {entry['type'].upper()} - {timestamp}\n")
+                
+                # Display inputs
+                inputs = entry.get('inputs', {})
+                history_text.insert(tk.END, f"   Inputs: {inputs}\n")
+                
+                # Display results
+                results = entry.get('results', {})
+                history_text.insert(tk.END, f"   Results: {results}\n")
+                
+                if entry.get('description'):
+                    history_text.insert(tk.END, f"   Note: {entry['description']}\n")
+                
+                history_text.insert(tk.END, "\n")
+        
+        # Buttons
+        button_frame = tk.Frame(history_window, bg='#1c1c1e')
+        button_frame.pack(fill='x', padx=10, pady=10)
+        
+        export_btn = tk.Button(button_frame, text="Export History to CSV", 
+                              command=self.export_history_csv,
+                              bg='#d4d4d2', fg='#1c1c1e', font=('SF Pro Display', 12))
+        export_btn.pack(side='left', padx=(0, 10))
+        
+        clear_btn = tk.Button(button_frame, text="Clear History", 
+                             command=self.clear_history,
+                             bg='#d4d4d2', fg='#1c1c1e', font=('SF Pro Display', 12))
+        clear_btn.pack(side='left')
+        
+        close_btn = tk.Button(button_frame, text="Close", 
+                             command=history_window.destroy,
+                             bg='#d4d4d2', fg='#1c1c1e', font=('SF Pro Display', 12))
+        close_btn.pack(side='right')
+    
+    def export_history_csv(self):
+        """Export calculation history to CSV file"""
+        if not self.calculation_history:
+            messagebox.showwarning("No Data", "No calculation history to export.")
+            return
+        
+        filename = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            title="Save History As"
+        )
+        
+        if filename:
+            if self.export_to_csv(self.calculation_history, filename):
+                messagebox.showinfo("Export Complete", f"History exported successfully to:\n{filename}")
+    
+    def clear_history(self):
+        """Clear calculation history"""
+        result = messagebox.askyesno("Confirm Clear", 
+            "Are you sure you want to clear all calculation history?\n\nThis action cannot be undone.")
+        
+        if result:
+            self.calculation_history = []
+            self.save_history()
+            messagebox.showinfo("History Cleared", "Calculation history has been cleared.")
+    
+    def save_current_calculation(self):
+        """Save current calculation to favorites"""
+        if not self.last_calculation_data:
+            messagebox.showwarning("No Calculation", "No recent calculation to save.")
+            return
+        
+        name = simpledialog.askstring("Save Calculation", 
+            "Enter a name for this calculation:", 
+            initialvalue=f"{self.last_calculation_data['type'].upper()} - {datetime.now().strftime('%Y-%m-%d')}")
+        
+        if name:
+            self.add_to_favorites(
+                name,
+                self.last_calculation_data['type'],
+                self.last_calculation_data['inputs'],
+                self.last_calculation_data['results'],
+                self.last_calculation_data.get('description', '')
+            )
+    
+    def show_favorites_window(self):
+        """Show favorite calculations in a new window"""
+        favorites_window = tk.Toplevel(self.root)
+        favorites_window.title("Favorite Calculations")
+        favorites_window.geometry("800x600")
+        favorites_window.configure(bg='#1c1c1e')
+        
+        # Create scrollable text area
+        text_frame = tk.Frame(favorites_window, bg='#1c1c1e')
+        text_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        scrollbar = tk.Scrollbar(text_frame)
+        scrollbar.pack(side='right', fill='y')
+        
+        favorites_text = tk.Text(text_frame, bg='#333333', fg='white', 
+                               font=('SF Pro Display', 11), yscrollcommand=scrollbar.set)
+        favorites_text.pack(fill='both', expand=True)
+        scrollbar.config(command=favorites_text.yview)
+        
+        # Display favorites
+        if not self.favorites:
+            favorites_text.insert(tk.END, "No favorite calculations saved.\n\nSave calculations you want to reuse or reference later!")
+        else:
+            favorites_text.insert(tk.END, f"FAVORITE CALCULATIONS ({len(self.favorites)} saved)\n")
+            favorites_text.insert(tk.END, "=" * 60 + "\n\n")
+            
+            for i, entry in enumerate(self.favorites, 1):
+                timestamp = datetime.fromisoformat(entry['timestamp']).strftime("%Y-%m-%d %H:%M:%S")
+                favorites_text.insert(tk.END, f"{i}. {entry['name']}\n")
+                favorites_text.insert(tk.END, f"   Type: {entry['type'].upper()} - Saved: {timestamp}\n")
+                
+                # Display inputs
+                inputs = entry.get('inputs', {})
+                favorites_text.insert(tk.END, f"   Inputs: {inputs}\n")
+                
+                # Display results
+                results = entry.get('results', {})
+                favorites_text.insert(tk.END, f"   Results: {results}\n")
+                
+                if entry.get('description'):
+                    favorites_text.insert(tk.END, f"   Note: {entry['description']}\n")
+                
+                favorites_text.insert(tk.END, "\n")
+        
+        # Buttons
+        button_frame = tk.Frame(favorites_window, bg='#1c1c1e')
+        button_frame.pack(fill='x', padx=10, pady=10)
+        
+        export_btn = tk.Button(button_frame, text="Export Favorites to CSV", 
+                              command=self.export_favorites_csv,
+                              bg='#d4d4d2', fg='#1c1c1e', font=('SF Pro Display', 12))
+        export_btn.pack(side='left', padx=(0, 10))
+        
+        clear_btn = tk.Button(button_frame, text="Clear Favorites", 
+                             command=self.clear_favorites,
+                             bg='#d4d4d2', fg='#1c1c1e', font=('SF Pro Display', 12))
+        clear_btn.pack(side='left', padx=(0, 10))
+        
+        close_btn = tk.Button(button_frame, text="Close", 
+                             command=favorites_window.destroy,
+                             bg='#d4d4d2', fg='#1c1c1e', font=('SF Pro Display', 12))
+        close_btn.pack(side='right')
+    
+    def export_favorites_csv(self):
+        """Export favorite calculations to CSV file"""
+        if not self.favorites:
+            messagebox.showwarning("No Data", "No favorite calculations to export.")
+            return
+        
+        filename = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            title="Save Favorites As"
+        )
+        
+        if filename:
+            if self.export_to_csv(self.favorites, filename):
+                messagebox.showinfo("Export Complete", f"Favorites exported successfully to:\n{filename}")
+    
+    def clear_favorites(self):
+        """Clear all favorite calculations"""
+        if not self.favorites:
+            messagebox.showinfo("No Data", "No favorite calculations to clear.")
+            return
+        
+        result = messagebox.askyesno("Confirm Clear", 
+            f"Are you sure you want to clear all {len(self.favorites)} favorite calculations?\n\nThis action cannot be undone.")
+        
+        if result:
+            self.favorites = []
+            self.save_favorites()
+            messagebox.showinfo("Favorites Cleared", "All favorite calculations have been cleared.")
+            
+            # Refresh the favorites window if it's open
+            # Note: This is a simple approach - in a more complex app, we'd update the window dynamically
+    
+    def save_calculation_data(self, calc_type, inputs, results, description=""):
+        """Save calculation data for export and history"""
+        self.last_calculation_data = {
+            'type': calc_type,
+            'inputs': inputs,
+            'results': results,
+            'description': description
+        }
+        
+        # Add to history automatically
+        self.add_to_history(calc_type, inputs, results, description)
+    
+    def export_current_calculation(self):
+        """Export the current calculation to CSV"""
+        if not self.last_calculation_data:
+            messagebox.showwarning("No Data", "No recent calculation to export.\n\nPlease perform a calculation first.")
+            return
+        
+        filename = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            title="Export Current Calculation"
+        )
+        
+        if filename:
+            if self.export_to_csv([self.last_calculation_data], filename):
+                messagebox.showinfo("Export Complete", f"Current calculation exported to:\n{filename}")
+    
     def run(self):
         """Start the calculator"""
         self.root.mainloop()
@@ -1041,3 +1564,405 @@ class FinanceCalculator:
 if __name__ == "__main__":
     calculator = FinanceCalculator()
     calculator.run()
+    
+    def save_history(self):
+        """Save calculation history to file"""
+        try:
+            with open(self.history_file, 'w') as f:
+                json.dump(self.calculation_history, f, indent=2)
+        except Exception as e:
+            print(f"Error saving history: {e}")
+    
+    def load_favorites(self):
+        """Load favorites from file"""
+        try:
+            if os.path.exists(self.favorites_file):
+                with open(self.favorites_file, 'r') as f:
+                    self.favorites = json.load(f)
+        except Exception as e:
+            print(f"Error loading favorites: {e}")
+            self.favorites = []
+    
+    def save_favorites(self):
+        """Save favorites to file"""
+        try:
+            with open(self.favorites_file, 'w') as f:
+                json.dump(self.favorites, f, indent=2)
+        except Exception as e:
+            print(f"Error saving favorites: {e}")
+    
+    def add_to_history(self, calculation_type, inputs, results):
+        """Add calculation to history"""
+        history_entry = {
+            'timestamp': datetime.now().isoformat(),
+            'type': calculation_type,
+            'inputs': inputs,
+            'results': results
+        }
+        
+        self.calculation_history.insert(0, history_entry)  # Add to beginning
+        
+        # Keep only last 50 calculations
+        if len(self.calculation_history) > 50:
+            self.calculation_history = self.calculation_history[:50]
+        
+        self.save_history()
+    
+    def add_to_favorites(self, calculation_type, inputs, results, name=None):
+        """Add calculation to favorites"""
+        if name is None:
+            name = f"{calculation_type.upper()} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        
+        favorite_entry = {
+            'name': name,
+            'timestamp': datetime.now().isoformat(),
+            'type': calculation_type,
+            'inputs': inputs,
+            'results': results
+        }
+        
+        self.favorites.append(favorite_entry)
+        self.save_favorites()
+        
+        messagebox.showinfo("Added to Favorites", f"Calculation saved as: {name}")
+    
+    def export_to_csv(self, data, filename):
+        """Export calculation data to CSV"""
+        try:
+            with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                if data['type'] == 'npv':
+                    writer = csv.writer(csvfile)
+                    writer.writerow(['NPV Analysis Report'])
+                    writer.writerow(['Generated:', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+                    writer.writerow([])
+                    
+                    writer.writerow(['Inputs:'])
+                    writer.writerow(['Discount Rate (%)', data['inputs']['discount_rate']])
+                    writer.writerow(['Cash Flows', ', '.join(map(str, data['inputs']['cash_flows']))])
+                    writer.writerow([])
+                    
+                    writer.writerow(['Results:'])
+                    writer.writerow(['NPV ($)', f"{data['results']['npv']:,.2f}"])
+                    writer.writerow(['IRR (%)', f"{data['results']['irr']:.2%}" if data['results']['irr'] else 'N/A'])
+                    writer.writerow(['Payback (years)', f"{data['results']['payback']:.1f}" if data['results']['payback'] else 'N/A'])
+                
+                elif data['type'] == 'dcf':
+                    writer = csv.writer(csvfile)
+                    writer.writerow(['DCF Valuation Report'])
+                    writer.writerow(['Generated:', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+                    writer.writerow([])
+                    
+                    writer.writerow(['Inputs:'])
+                    writer.writerow(['Free Cash Flows', ', '.join(map(str, data['inputs']['cash_flows']))])
+                    writer.writerow(['Terminal Growth Rate (%)', data['inputs']['terminal_growth']])
+                    writer.writerow(['Discount Rate/WACC (%)', data['inputs']['discount_rate']])
+                    writer.writerow([])
+                    
+                    writer.writerow(['Results:'])
+                    writer.writerow(['Enterprise Value ($)', f"{data['results']['enterprise_value']:,.0f}"])
+                    writer.writerow(['PV of Cash Flows ($)', f"{data['results']['pv_cashflows']:,.0f}"])
+                    writer.writerow(['PV of Terminal Value ($)', f"{data['results']['pv_terminal_value']:,.0f}"])
+                    writer.writerow(['Terminal Value ($)', f"{data['results']['terminal_value']:,.0f}"])
+                
+                elif data['type'] == 'cashflow':
+                    writer = csv.writer(csvfile)
+                    writer.writerow(['Cash Flow Projection Report'])
+                    writer.writerow(['Generated:', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+                    writer.writerow([])
+                    
+                    writer.writerow(['Inputs:'])
+                    writer.writerow(['Initial Cash Flow ($)', f"{data['inputs']['initial_cf']:,.0f}"])
+                    writer.writerow(['Growth Rate (%)', data['inputs']['growth_rate']])
+                    writer.writerow(['Number of Years', data['inputs']['years']])
+                    writer.writerow([])
+                    
+                    writer.writerow(['Year-by-Year Projections:'])
+                    writer.writerow(['Year', 'Cash Flow ($)', 'Growth from Initial (%)'])
+                    for i, projection in enumerate(data['results']['projections'], 1):
+                        growth_pct = ((projection / data['inputs']['initial_cf']) - 1) * 100
+                        writer.writerow([i, f"{projection:,.0f}", f"{growth_pct:.0f}%"])
+                    
+                    writer.writerow([])
+                    writer.writerow(['Summary:'])
+                    writer.writerow(['Total Cash Flow ($)', f"{data['results']['total_cf']:,.0f}"])
+                    writer.writerow(['Average Annual CF ($)', f"{data['results']['avg_cf']:,.0f}"])
+                    writer.writerow(['CAGR (%)', f"{data['results']['cagr']:.2%}"])
+                
+                elif data['type'] == 'bonds':
+                    writer = csv.writer(csvfile)
+                    writer.writerow(['Bond Valuation Report'])
+                    writer.writerow(['Generated:', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+                    writer.writerow([])
+                    
+                    writer.writerow(['Inputs:'])
+                    writer.writerow(['Face Value ($)', f"{data['inputs']['face_value']:,.0f}"])
+                    writer.writerow(['Coupon Rate (%)', data['inputs']['coupon_rate']])
+                    writer.writerow(['Required Yield (%)', data['inputs']['yield_rate']])
+                    writer.writerow(['Years to Maturity', data['inputs']['years_to_maturity']])
+                    writer.writerow(['Payments per Year', data['inputs']['payments_per_year']])
+                    writer.writerow([])
+                    
+                    writer.writerow(['Results:'])
+                    writer.writerow(['Bond Price ($)', f"{data['results']['bond_price']:,.2f}"])
+                    writer.writerow(['Current Yield (%)', f"{data['results']['current_yield']:.2%}"])
+                    writer.writerow(['Duration (years)', f"{data['results']['duration']:.2f}"])
+                    writer.writerow(['Annual Coupon ($)', f"{data['results']['coupon_payment']:,.2f}"])
+            
+            return True
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export to CSV:\n{str(e)}")
+            return False
+    
+    def show_history_window(self):
+        """Show calculation history window"""
+        history_window = tk.Toplevel(self.root)
+        history_window.title("Calculation History")
+        history_window.geometry("600x400")
+        history_window.configure(bg='#1c1c1e')
+        
+        # History list
+        history_frame = tk.Frame(history_window, bg='#1c1c1e')
+        history_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        tk.Label(history_frame, text="Recent Calculations", 
+                font=('SF Pro Display', 16), bg='#1c1c1e', fg='white').pack(pady=(0, 10))
+        
+        # Scrollable list
+        list_frame = tk.Frame(history_frame, bg='#1c1c1e')
+        list_frame.pack(fill='both', expand=True)
+        
+        scrollbar = tk.Scrollbar(list_frame)
+        scrollbar.pack(side='right', fill='y')
+        
+        history_listbox = tk.Listbox(
+            list_frame, 
+            yscrollcommand=scrollbar.set,
+            bg='#333333',
+            fg='white',
+            font=('SF Pro Display', 11),
+            selectbackground='#555555'
+        )
+        history_listbox.pack(side='left', fill='both', expand=True)
+        scrollbar.config(command=history_listbox.yview)
+        
+        # Populate history
+        for entry in self.calculation_history:
+            timestamp = datetime.fromisoformat(entry['timestamp']).strftime('%Y-%m-%d %H:%M')
+            display_text = f"{timestamp} - {entry['type'].upper()}"
+            history_listbox.insert(tk.END, display_text)
+        
+        # Buttons
+        button_frame = tk.Frame(history_window, bg='#1c1c1e')
+        button_frame.pack(fill='x', padx=10, pady=10)
+        
+        def export_selected():
+            selection = history_listbox.curselection()
+            if selection:
+                entry = self.calculation_history[selection[0]]
+                filename = filedialog.asksaveasfilename(
+                    defaultextension=".csv",
+                    filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                    title="Export Calculation"
+                )
+                if filename:
+                    if self.export_to_csv(entry, filename):
+                        messagebox.showinfo("Export Success", f"Calculation exported to {filename}")
+        
+        def load_selected():
+            selection = history_listbox.curselection()
+            if selection:
+                entry = self.calculation_history[selection[0]]
+                self.load_calculation(entry)
+                history_window.destroy()
+        
+        tk.Button(button_frame, text="Load Selected", command=load_selected,
+                 bg='#d4d4d2', fg='#1c1c1e', font=('SF Pro Display', 12)).pack(side='left', padx=5)
+        tk.Button(button_frame, text="Export Selected", command=export_selected,
+                 bg='#d4d4d2', fg='#1c1c1e', font=('SF Pro Display', 12)).pack(side='left', padx=5)
+        tk.Button(button_frame, text="Close", command=history_window.destroy,
+                 bg='#d4d4d2', fg='#1c1c1e', font=('SF Pro Display', 12)).pack(side='right', padx=5)
+    
+    def show_favorites_window(self):
+        """Show favorites window"""
+        favorites_window = tk.Toplevel(self.root)
+        favorites_window.title("Favorite Calculations")
+        favorites_window.geometry("600x400")
+        favorites_window.configure(bg='#1c1c1e')
+        
+        # Favorites list
+        favorites_frame = tk.Frame(favorites_window, bg='#1c1c1e')
+        favorites_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        tk.Label(favorites_frame, text="Saved Calculations", 
+                font=('SF Pro Display', 16), bg='#1c1c1e', fg='white').pack(pady=(0, 10))
+        
+        # Scrollable list
+        list_frame = tk.Frame(favorites_frame, bg='#1c1c1e')
+        list_frame.pack(fill='both', expand=True)
+        
+        scrollbar = tk.Scrollbar(list_frame)
+        scrollbar.pack(side='right', fill='y')
+        
+        favorites_listbox = tk.Listbox(
+            list_frame, 
+            yscrollcommand=scrollbar.set,
+            bg='#333333',
+            fg='white',
+            font=('SF Pro Display', 11),
+            selectbackground='#555555'
+        )
+        favorites_listbox.pack(side='left', fill='both', expand=True)
+        scrollbar.config(command=favorites_listbox.yview)
+        
+        # Populate favorites
+        for entry in self.favorites:
+            favorites_listbox.insert(tk.END, entry['name'])
+        
+        # Buttons
+        button_frame = tk.Frame(favorites_window, bg='#1c1c1e')
+        button_frame.pack(fill='x', padx=10, pady=10)
+        
+        def load_selected():
+            selection = favorites_listbox.curselection()
+            if selection:
+                entry = self.favorites[selection[0]]
+                self.load_calculation(entry)
+                favorites_window.destroy()
+        
+        def delete_selected():
+            selection = favorites_listbox.curselection()
+            if selection:
+                if messagebox.askyesno("Confirm Delete", "Delete selected favorite?"):
+                    del self.favorites[selection[0]]
+                    self.save_favorites()
+                    favorites_listbox.delete(selection[0])
+        
+        tk.Button(button_frame, text="Load Selected", command=load_selected,
+                 bg='#d4d4d2', fg='#1c1c1e', font=('SF Pro Display', 12)).pack(side='left', padx=5)
+        tk.Button(button_frame, text="Delete Selected", command=delete_selected,
+                 bg='#d4d4d2', fg='#1c1c1e', font=('SF Pro Display', 12)).pack(side='left', padx=5)
+        tk.Button(button_frame, text="Close", command=favorites_window.destroy,
+                 bg='#d4d4d2', fg='#1c1c1e', font=('SF Pro Display', 12)).pack(side='right', padx=5)
+    
+    def load_calculation(self, entry):
+        """Load a calculation from history or favorites"""
+        calc_type = entry['type']
+        inputs = entry['inputs']
+        
+        # Switch to appropriate mode
+        self.switch_mode(calc_type)
+        
+        # Load inputs based on calculation type
+        if calc_type == 'npv':
+            self.rate_entry.delete(0, tk.END)
+            self.rate_entry.insert(0, str(inputs['discount_rate']))
+            
+            self.cashflows_entry.delete("1.0", tk.END)
+            self.cashflows_entry.insert("1.0", ', '.join(map(str, inputs['cash_flows'])))
+        
+        elif calc_type == 'dcf':
+            self.dcf_cashflows_entry.delete("1.0", tk.END)
+            self.dcf_cashflows_entry.insert("1.0", ', '.join(map(str, inputs['cash_flows'])))
+            
+            self.terminal_growth_entry.delete(0, tk.END)
+            self.terminal_growth_entry.insert(0, str(inputs['terminal_growth']))
+            
+            self.wacc_entry.delete(0, tk.END)
+            self.wacc_entry.insert(0, str(inputs['discount_rate']))
+        
+        elif calc_type == 'cashflow':
+            self.initial_cf_entry.delete(0, tk.END)
+            self.initial_cf_entry.insert(0, str(inputs['initial_cf']))
+            
+            self.growth_cf_entry.delete(0, tk.END)
+            self.growth_cf_entry.insert(0, str(inputs['growth_rate']))
+            
+            self.years_entry.delete(0, tk.END)
+            self.years_entry.insert(0, str(inputs['years']))
+        
+        elif calc_type == 'bonds':
+            self.face_value_entry.delete(0, tk.END)
+            self.face_value_entry.insert(0, str(inputs['face_value']))
+            
+            self.coupon_rate_entry.delete(0, tk.END)
+            self.coupon_rate_entry.insert(0, str(inputs['coupon_rate']))
+            
+            self.yield_rate_entry.delete(0, tk.END)
+            self.yield_rate_entry.insert(0, str(inputs['yield_rate']))
+            
+            self.maturity_entry.delete(0, tk.END)
+            self.maturity_entry.insert(0, str(inputs['years_to_maturity']))
+            
+            self.payment_freq_entry.delete(0, tk.END)
+            self.payment_freq_entry.insert(0, str(inputs['payments_per_year']))
+        
+        messagebox.showinfo("Calculation Loaded", f"Loaded {calc_type.upper()} calculation from {entry.get('name', 'history')}")
+    
+    def export_current_calculation(self):
+        """Export the current calculation results"""
+        if self.current_mode == "basic":
+            messagebox.showinfo("Export Info", "Basic calculator mode doesn't have exportable calculations.\n\nPlease use NPV, DCF, Cash Flow, or Bond modes for export functionality.")
+            return
+        
+        if not hasattr(self, 'last_calculation_data') or not self.last_calculation_data:
+            messagebox.showwarning("No Data", "No calculation results to export.\n\nPlease perform a calculation first.")
+            return
+        
+        # Ask user for export options
+        export_window = tk.Toplevel(self.root)
+        export_window.title("Export Options")
+        export_window.geometry("300x200")
+        export_window.configure(bg='#1c1c1e')
+        export_window.transient(self.root)
+        export_window.grab_set()
+        
+        tk.Label(export_window, text="Export Current Calculation", 
+                font=('SF Pro Display', 14), bg='#1c1c1e', fg='white').pack(pady=10)
+        
+        button_frame = tk.Frame(export_window, bg='#1c1c1e')
+        button_frame.pack(expand=True)
+        
+        def export_csv():
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                title="Export to CSV"
+            )
+            if filename:
+                if self.export_to_csv(self.last_calculation_data, filename):
+                    messagebox.showinfo("Export Success", f"Calculation exported to {filename}")
+                export_window.destroy()
+        
+        def save_favorite():
+            name = simpledialog.askstring("Save Favorite", "Enter a name for this calculation:")
+            if name:
+                self.add_to_favorites(
+                    self.last_calculation_data['type'],
+                    self.last_calculation_data['inputs'],
+                    self.last_calculation_data['results'],
+                    name
+                )
+            export_window.destroy()
+        
+        tk.Button(button_frame, text="📄 Export to CSV", command=export_csv,
+                 bg='#d4d4d2', fg='#1c1c1e', font=('SF Pro Display', 12), 
+                 width=15).pack(pady=5)
+        
+        tk.Button(button_frame, text="⭐ Save as Favorite", command=save_favorite,
+                 bg='#d4d4d2', fg='#1c1c1e', font=('SF Pro Display', 12), 
+                 width=15).pack(pady=5)
+        
+        tk.Button(button_frame, text="Cancel", command=export_window.destroy,
+                 bg='#d4d4d2', fg='#1c1c1e', font=('SF Pro Display', 12), 
+                 width=15).pack(pady=5)
+    
+    def save_calculation_data(self, calc_type, inputs, results):
+        """Save calculation data for export and history"""
+        self.last_calculation_data = {
+            'type': calc_type,
+            'inputs': inputs,
+            'results': results
+        }
+        
+        # Add to history
+        self.add_to_history(calc_type, inputs, results)

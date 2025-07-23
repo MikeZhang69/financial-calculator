@@ -20,6 +20,14 @@ A comprehensive Python-based finance calculator app inspired by the iPhone calcu
 - **Format Guidance**: Clear examples of expected input formats
 - **Warning System**: Alerts for unusual but valid inputs
 
+### 💾 Data Management & Export
+- **Calculation History**: Automatic saving of all calculations with timestamps
+- **Favorites System**: Save and name important calculations for future reference
+- **CSV Export**: Export individual calculations or entire history to spreadsheets
+- **Data Persistence**: JSON-based storage that survives application restarts
+- **Quick Access**: Menu bar buttons for History, Favorites, Save, and Export
+- **Professional Reports**: Formatted CSV exports ready for business use
+
 ### 📊 NPV Calculator
 - **Net Present Value (NPV)** calculation with multiple cash flows
 - **Internal Rate of Return (IRR)** using Newton-Raphson method
